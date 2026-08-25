@@ -1,0 +1,126 @@
+import google.generativeai as genai
+import json
+
+# ==========================================
+# 1. Configuración de la API (Gemini Pro)
+# ==========================================
+# Recuerda configurar tu API KEY de forma segura usando variables de entorno o un archivo .env
+# GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+# genai.configure(api_key=GOOGLE_API_KEY)
+
+def generar_prompt_maestro(texto_limpio_cv: str) -> str:
+    """
+    Construye el Prompt Maestro dinámico utilizando la metodología R-C-T-F.
+    Incluye Few-Shot Prompting para calibrar la severidad del análisis del LLM.
+    """
+    
+    # 💡 TIP DE IA: Los delimitadores como "###" o "---" son vitales. Le indican a la red 
+    # neuronal del LLM exactamente dónde empieza un bloque de instrucciones y dónde terminan 
+    # los datos crudos, reduciendo la ambigüedad estructural.
+    
+    prompt = f"""
+    ### [ROL]
+    Actúas como un Sistema ATS (Applicant Tracking System) avanzado y un Reclutador Técnico Senior de Silicon Valley, implacable y orientado a resultados cuantificables.
+    
+    ### [CONTEXTO]
+    Recibirás el texto limpio de un currículum vitae (CV) analizado. Tu objetivo es evaluar este perfil contra los estándares más altos de la industria tecnológica, identificando "Gaps" (vacíos de habilidades o métricas) y proponiendo mejoras tácticas para que el candidato supere filtros automatizados.
+    
+    ### [TAREA]
+    1. Analiza exhaustivamente el texto del CV.
+    2. Asigna un "score_ats" (0 a 100) basado en la presencia de palabras clave, verbos de acción y métricas comprobables. Sé severo.
+    3. Detecta "gaps_detectados" (errores como falta de números, habilidades clave ausentes o descripciones vagas).
+    4. Proporciona "recomendaciones_claras" y altamente accionables.
+    5. Redacta un "cv_reescrito_mejorado", tomando el resumen profesional o la experiencia más reciente, e inyectándole verbos de impacto y enfoque en logros.
+    
+    ### [FORMATO]
+    DEBES responder ÚNICA Y EXCLUSIVAMENTE en formato JSON válido.
+    NO incluyas saludos, introducciones, conclusiones, ni texto fuera de las llaves {{}}. 
+    NO uses markdown como ```json o ``` alrededor de la respuesta.
+    
+    La estructura exacta debe ser:
+    {{
+      "score_ats": <entero>,
+      "gaps_detectados": ["gap1", "gap2", ...],
+      "recomendaciones_claras": ["rec1", "rec2", ...],
+      "cv_reescrito_mejorado": "<texto>"
+    }}
+    
+    ### [EJEMPLOS FEW-SHOT PARA CALIBRACIÓN]
+    --- EJEMPLO 1 (CV Pobre) ---
+    INPUT: "Desarrollador de software. Hice backend en Python y SQL. Trabajé en un banco ayudando al equipo."
+    OUTPUT: 
+    {{
+      "score_ats": 35,
+      "gaps_detectados": ["Falta de métricas de impacto (¿qué logró en el banco?)", "Uso de verbos pasivos ('ayudando')", "No especifica tecnologías del ecosistema (Django, PostgreSQL)"],
+      "recomendaciones_claras": ["Cuantifica tus logros (ej. 'Mejoré el rendimiento de X proceso en un Y%')", "Reemplaza 'ayudando' por verbos como 'Lideré', 'Desarrollé' o 'Implementé'", "Lista explícitamente los motores de bases de datos y frameworks usados"],
+      "cv_reescrito_mejorado": "Desarrollador Backend Python y SQL con experiencia en el sector financiero. Implementé soluciones de software escalables que optimizaron las operaciones del equipo, utilizando bases de datos relacionales y buenas prácticas de desarrollo."
+    }}
+    
+    ### [DATOS DE ENTRADA REALES (INPUT)]
+    A continuación, el CV a analizar:
+    
+    {texto_limpio_cv}
+    """
+    return prompt
+
+def analizar_cv_con_gemini(texto_limpio_cv: str) -> dict:
+    """
+    Función que orquesta la llamada al LLM y parsea la respuesta JSON.
+    """
+    # Construimos el prompt dinámico
+    prompt = generar_prompt_maestro(texto_limpio_cv)
+    
+    try:
+        # Instanciamos el modelo. Usaremos un modelo optimizado para tareas de texto.
+        # Ajustar los parámetros de generación es crítico para obtener datos estructurados.
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        # 💡 TIP DE IA: Para obligar a que Gemini actúe como una API determinista (y no 
+        # como un chatbot creativo), bajamos la 'temperature' casi a 0. Esto asegura que 
+        # siempre siga la estructura JSON que le pedimos en el [FORMATO].
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.1, 
+            )
+        )
+        
+        texto_respuesta = response.text.strip()
+        
+        # Parseamos el JSON para devolver un diccionario de Python manipulable.
+        datos_analizados = json.loads(texto_respuesta)
+        return datos_analizados
+
+    except json.JSONDecodeError as e:
+        print(f"Error crítico: El modelo no devolvió un JSON válido. Respuesta cruda: {texto_respuesta}")
+        return None
+    except Exception as e:
+        print(f"Error al llamar a la API de Gemini: {e}")
+        return None
+
+# ==========================================
+# Bloque de ejecución principal
+# ==========================================
+if __name__ == '__main__':
+    # Simulamos el output del paso anterior (ETL)
+    cv_de_prueba = """
+    Analista de Datos. Manejo bases de datos y hago dashboards. 
+    Trabajé en retail 3 años viendo ventas y haciendo reportes en Excel.
+    """
+    
+    print("Enviando CV a Gemini Pro para análisis ATS...\n")
+    resultado = analizar_cv_con_gemini(cv_de_prueba)
+    
+    if resultado:
+        print("=== RESULTADO DEL ANÁLISIS ATS ===")
+        print(f"Score: {resultado['score_ats']}/100")
+        print("\nGaps Detectados:")
+        for gap in resultado['gaps_detectados']:
+            print(f"- {gap}")
+        
+        print("\nRecomendaciones:")
+        for rec in resultado['recomendaciones_claras']:
+            print(f"- {rec}")
+            
+        print("\nCV Reescripto Sugerido:")
+        print(resultado['cv_reescrito_mejorado'])
