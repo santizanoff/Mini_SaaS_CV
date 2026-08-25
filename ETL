@@ -1,0 +1,82 @@
+import re
+import unicodedata
+import pdfplumber
+import spacy
+
+# Cargar el modelo de lenguaje en español de spaCy para procesamiento NLP avanzado
+
+
+    nlp = spacy.load("es_core_news_sm")
+except OSError:
+    print("Por favor, descarga el modelo de spaCy ejecutando: python -m spacy download es_core_news_sm")
+
+def extraer_texto_pdf(ruta_pdf: str) -> str:
+    """
+    Extrae el texto de un archivo PDF página por página.
+    Utilizamos pdfplumber porque respeta mejor los saltos de línea y la estructura 
+    de columnas típica de los currículums.
+    """
+    texto_extraido = []
+    try:
+        with pdfplumber.open(ruta_pdf) as pdf:
+            for pagina in pdf.pages:
+                # Extraemos el texto y lo añadimos a nuestra lista
+                texto = pagina.extract_text()
+                if texto:
+                    texto_extraido.append(texto)
+        return "\n".join(texto_extraido)
+    except Exception as e:
+        return f"Error al leer el PDF: {e}"
+
+def normalizar_texto_cv(texto_bruto: str) -> str:
+    """
+    Aplica técnicas de limpieza para normalizar datos textuales.
+    El objetivo es reducir el "ruido" antes de enviar el prompt al LLM.
+    """
+    if not texto_bruto:
+        return ""
+    
+    # 1. Normalizamos caracteres Unicode (NFKC) para evitar problemas de codificación 
+    # y estandarizar tildes o caracteres especiales.
+    texto = unicodedata.normalize("NFKC", texto_bruto)
+    
+    # 2. Convertimos todo a minúsculas para un análisis uniforme.
+    # Esto ayuda a que el LLM no se confunda entre "Python", "PYTHON" o "python".
+    texto = texto.lower()
+    
+    # 3. Sustituimos saltos de línea múltiples y tabulaciones por espacios simples.
+    texto = re.sub(r'[\r\n\t]+', ' ', texto)
+    
+    # 4. Colapsamos múltiples espacios consecutivos en un solo espacio.
+    texto = re.sub(r'\s+', ' ', texto)
+    
+    # 5. Recortamos espacios residuales al inicio y al final del documento.
+    texto = texto.strip()
+    
+    return texto
+
+def pipeline_etl_cv(ruta_archivo: str) -> str:
+    """
+    Función orquestadora del pipeline ETL.
+    Extrae, transforma (limpia) y retorna el texto listo para la carga al modelo LLM.
+    """
+    print(f"Iniciando extracción del CV: {ruta_archivo}...")
+    texto_pdf = extraer_texto_pdf(ruta_archivo)
+    
+    print("Aplicando limpieza y normalización NLP...")
+    texto_limpio = normalizar_texto_cv(texto_pdf)
+    
+    return texto_limpio
+
+# ==========================================
+# Bloque de ejecución principal
+# ==========================================
+if __name__ == '__main__':
+    # Simulación de la ruta de un currículum
+    ruta_mi_cv = "cv_candidato.pdf" 
+    
+    # Ejecutamos el pipeline
+    cv_procesado = pipeline_etl_cv(ruta_mi_cv)
+    
+    print("\n--- TEXTO RESULTANTE PARA EL LLM ---")
+    print(cv_procesado[:500] + "...\n") # Mostramos solo los primeros 500 caracteres
